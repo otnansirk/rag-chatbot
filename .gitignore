@@ -1,3 +1,5 @@
 venv
 secret.md
 .env
+__pycache__/
+*.pyc
