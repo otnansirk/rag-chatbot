@@ -5,29 +5,53 @@ from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain.chains import RetrievalQA
 from langchain.prompts import PromptTemplate
+import os
 
 from services.helper import guardrail_prompt
 
 
-class Knowlage():
+class Knowlage:
+
+    def __init__(self, company: str):
+        self.company = company
+        self.base_path = f"knowlages/{self.company}"
 
     # Upload knowlage
     # params self
     def upload(self):
         pass
+    
+
+    # Load knowlages
+    # params self
+    def load_all(self):
+        if not os.path.exists(self.base_path):
+            raise FileNotFoundError(f"Knowlage not found: {self.base_path}")
+        
+        documents = []
+
+        # Loop semua file PDF dalam folder
+        for file in os.listdir(self.base_path):
+            if file.endswith(".pdf"):
+                path = os.path.join(self.base_path, file)
+                loader = PDFPlumberLoader(path)
+                docs = loader.load()
+                documents.extend(docs)  # Gabung semua dokumen
+
+        if not documents:
+            raise ValueError("Knowlages not found")
+
+        return documents
 
     # Load knowlage
     # params self
-    def load(self):
-        knowlages       = "panduan_investasi.pdf"
-        embeding_model  = "models/embedding-001"
-        llm_model       = "gemini-1.5-flash"
-
-        loader = PDFPlumberLoader(knowlages)
-        documents = loader.load()
+    def chatbot(self):
+        embeding_model = "models/embedding-001"
+        llm_model      = "gemini-1.5-flash"
+        knowlages      = self.load_all()
 
         text_splitter = RecursiveCharacterTextSplitter(chunk_size=500, chunk_overlap=50)
-        docs_split = text_splitter.split_documents(documents)
+        docs_split = text_splitter.split_documents(knowlages)
 
         embeddings = GoogleGenerativeAIEmbeddings(model=embeding_model)
         vectorstore = FAISS.from_documents(docs_split, embeddings)
@@ -51,5 +75,5 @@ class Knowlage():
     # Query
     # params self, query: string
     def query(self, search: str):
-        response = self.load().invoke(search)
+        response = self.chatbot().invoke(search)
         return response
