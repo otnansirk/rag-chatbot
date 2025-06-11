@@ -1,17 +1,17 @@
 from langchain_community.document_loaders import PDFPlumberLoader
-from langchain_community.vectorstores import FAISS
+from langchain.text_splitter import RecursiveCharacterTextSplitter
+from services.helper import prompt_agent_rules, guardrail_prompt
 from langchain_google_genai import GoogleGenerativeAIEmbeddings
 from langchain_google_genai import ChatGoogleGenerativeAI
-from langchain.text_splitter import RecursiveCharacterTextSplitter
-from langchain.chains import RetrievalQA
+from langchain_community.vectorstores import FAISS
+from services.tools.check_stock import check_stock
+from langchain.tools import Tool, StructuredTool
+from langchain.agents import create_react_agent
 from langchain.prompts import PromptTemplate
-from langchain.agents import initialize_agent, AgentType
-# from langchain.agents.agent_toolkits import create_retriever_tool
-from langchain.tools import Tool
-from services.helper import guardrail_prompt, rules_prompt
+from langchain.agents import AgentExecutor
+from langchain.chains import RetrievalQA
 
 import os
-
 
 
 class Knowlage:
@@ -34,25 +34,27 @@ class Knowlage:
 
         documents = []
 
-        # Loop semua file PDF dalam folder
+        # Loop all pdf files in folder
         for file in os.listdir(self.base_path):
             if file.endswith(".pdf"):
                 path = os.path.join(self.base_path, file)
                 loader = PDFPlumberLoader(path)
                 docs = loader.load()
-                documents.extend(docs)  # Gabung semua dokumen
+                documents.extend(docs)  # Join all documents
 
         if not documents:
             raise ValueError("Knowlages not found")
 
         return documents
 
-    # Load knowlage
+    # Agent
     # params self
     def agent(self):
         embeding_model = "models/embedding-001"
         llm_model      = "gemini-1.5-flash"
         knowlages      = self.load_all()
+
+        llm = ChatGoogleGenerativeAI(model=llm_model, temperature=0.3)
 
         text_splitter = RecursiveCharacterTextSplitter(chunk_size=500, chunk_overlap=50)
         docs_split = text_splitter.split_documents(knowlages)
@@ -61,8 +63,8 @@ class Knowlage:
         vectorstore = FAISS.from_documents(docs_split, embeddings)
 
         retriever = vectorstore.as_retriever(search_kwargs={"k": 3})
-        llm = ChatGoogleGenerativeAI(model=llm_model, temperature=0.3)
-        prompt = PromptTemplate(
+
+        qa_chain_prompt = PromptTemplate(
             input_variables=["context", "question"],
             template=guardrail_prompt,
         )
@@ -71,32 +73,37 @@ class Knowlage:
             llm=llm,
             retriever=retriever,
             chain_type="stuff",
-            chain_type_kwargs={"prompt": prompt}
+            chain_type_kwargs={"prompt": qa_chain_prompt}
         )
 
-        rag_tools = Tool(
+        rag_tool = Tool(
             name="retriver_tools",
-            description=rules_prompt,
-            func=qa_chain.run,
-            return_direct=True
+            description="Untuk menjawab pertanyaan tentang inestasi",
+            func=qa_chain.run
+        )
+        check_stock_tool = StructuredTool.from_function(
+            name="check_stock",
+            description=(
+            "Gunakan ini untuk menjawab pertanyaan tentang ketersediaan, stok, jumlah barang. "),
+            func=check_stock
         )
 
-        tools = [rag_tools]
-        agent = initialize_agent(
+        tools = [rag_tool, check_stock_tool]
+
+        # Definisikan prompt
+        prompt = PromptTemplate.from_template(prompt_agent_rules)
+        agent = create_react_agent(llm, tools, prompt)
+
+        agent_executor = AgentExecutor(
+            agent=agent,
             tools=tools,
-            llm=llm,
-            agent=AgentType.OPENAI_FUNCTIONS,
-            handle_parsing_errors=True,
             verbose=True,
-            agent_kwargs={
-                "system_message": rules_prompt
-            }
+            handle_parsing_errors=True
         )
-
-        return agent
+        return agent_executor
 
     # Query
     # params self, query: string
     def query(self, search: str):
-        response = self.agent().invoke(search)
+        response = self.agent().invoke({"input": search})
         return response
