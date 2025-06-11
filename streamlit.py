@@ -15,7 +15,7 @@ query = st.chat_input("Tulis pertanyaanmu...")
 if query:
     st.session_state.chat_history.append({
         "question": query,
-        "answer": "Thinking..." 
+        "answer": "Thinking..."
     })
 
     # Show Chat User and Placeholder Bot
@@ -28,8 +28,9 @@ if query:
         knowlage = Knowlage("investa")
         try:
             res = knowlage.query(query)
-            answer = res.get("result", "Error")
+            answer = res.get("output", "Error")
         except Exception as e:
+            print("Error",e)
             answer = "❌ There was a mistake when answering."
 
         # Update the answer results in the last chat_history
