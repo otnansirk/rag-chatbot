@@ -5,9 +5,13 @@ from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain.chains import RetrievalQA
 from langchain.prompts import PromptTemplate
+from langchain.agents import initialize_agent, AgentType
+# from langchain.agents.agent_toolkits import create_retriever_tool
+from langchain.tools import Tool
+from services.helper import guardrail_prompt, rules_prompt
+
 import os
 
-from services.helper import guardrail_prompt
 
 
 class Knowlage:
@@ -20,14 +24,14 @@ class Knowlage:
     # params self
     def upload(self):
         pass
-    
+
 
     # Load knowlages
     # params self
     def load_all(self):
         if not os.path.exists(self.base_path):
             raise FileNotFoundError(f"Knowlage not found: {self.base_path}")
-        
+
         documents = []
 
         # Loop semua file PDF dalam folder
@@ -45,7 +49,7 @@ class Knowlage:
 
     # Load knowlage
     # params self
-    def chatbot(self):
+    def agent(self):
         embeding_model = "models/embedding-001"
         llm_model      = "gemini-1.5-flash"
         knowlages      = self.load_all()
@@ -64,16 +68,36 @@ class Knowlage:
         )
 
         qa_chain = RetrievalQA.from_chain_type(
-            llm=llm, 
+            llm=llm,
             retriever=retriever,
             chain_type="stuff",
             chain_type_kwargs={"prompt": prompt}
         )
 
-        return qa_chain
-    
+        rag_tools = Tool(
+            name="retriver_tools",
+            description=rules_prompt,
+            func=qa_chain.run,
+            return_direct=True
+        )
+
+        tools = [rag_tools]
+        agent = initialize_agent(
+            tools=tools,
+            llm=llm,
+            agent=AgentType.OPENAI_FUNCTIONS,
+            handle_parsing_errors=True,
+            verbose=True,
+            agent_kwargs={
+                "system_message": rules_prompt
+            }
+        )
+
+        return agent
+
     # Query
     # params self, query: string
     def query(self, search: str):
-        response = self.chatbot().invoke(search)
+        response = self.agent().invoke(search)
+        print("KRISSS",response)
         return response
