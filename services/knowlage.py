@@ -99,5 +99,4 @@ class Knowlage:
     # params self, query: string
     def query(self, search: str):
         response = self.agent().invoke(search)
-        print("KRISSS",response)
         return response
